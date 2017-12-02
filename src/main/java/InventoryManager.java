@@ -6,7 +6,7 @@ import java.net.DatagramSocket;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-public class Receiver {
+public class InventoryManager {
   // Patterns to parse requests
   private Pattern sendPattern;
   private Pattern checkPattern;
@@ -28,7 +28,7 @@ public class Receiver {
   // Flags
   private boolean end;
 
-  public Receiver() {
+  InventoryManager() {
     this.inventory = 500;
     this.sendPattern = Pattern.compile("^SEND([0-9]+)$");
     this.checkPattern = Pattern.compile("^CHECK$");
@@ -50,19 +50,19 @@ public class Receiver {
   }
 
   private String processRequest(String req) throws RequestException {
+    // default last change to 0 in case request exception occurs before receiver makes change to inventory
+    lastChange = 0;
     if (checkPattern.matcher(req).find()) {
       return "INV" + this.inventory;
-    } else if (sendPattern.matcher(req).find()) {
+    } else if (sendPattern.matcher(req).find()) { // Add to inventory
       changeInventory(parseAmount(req));
       return "INV" + this.inventory;
-    } else if (requestPattern.matcher(req).find()) {
+    } else if (requestPattern.matcher(req).find()) { // Deduct from inventory
       int reqAmount = parseAmount(req);
       if (reqAmount > this.inventory) {
         return "INSUFFICIENT";
       } else {
         changeInventory(0 - reqAmount);
-        lastChange = 0 - reqAmount;
-        this.inventory += lastChange;
         return "REQUESTOK" + this.inventory;
       }
     } else {
@@ -80,7 +80,7 @@ public class Receiver {
     ));
   }
 
-  private void handleRequests() throws IOException {
+  public void handleRequests() throws IOException {
     this.socket = new DatagramSocket(LISTEN_PORT);
     try {
       while (!this.end) {
@@ -98,7 +98,4 @@ public class Receiver {
     }
   }
 
-  public static void main(String[] args) throws IOException {
-    (new Receiver()).handleRequests();
-  }
 }
