@@ -340,7 +340,7 @@ class InventoryManager extends Frame implements WindowListener {
         InetAddress.getLocalHost(), InetAddress.getLocalHost(),
         this
       );
-    }catch (UnknownHostException e) {
+    } catch (UnknownHostException e) {
       e.printStackTrace();
       System.exit(1);
     }

@@ -7,14 +7,20 @@ import org.apache.commons.crypto.random.CryptoRandomFactory;
 import org.apache.commons.crypto.utils.Utils;
 import org.apache.commons.lang3.ArrayUtils;
 
+import javax.crypto.BadPaddingException;
 import javax.crypto.Cipher;
+import javax.crypto.IllegalBlockSizeException;
+import javax.crypto.NoSuchPaddingException;
 import javax.crypto.spec.IvParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
+import java.security.InvalidKeyException;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.security.interfaces.RSAPrivateKey;
+import java.security.interfaces.RSAPublicKey;
 import java.text.MessageFormat;
 import java.util.Arrays;
 import java.util.Base64;
@@ -32,9 +38,15 @@ public class Message {
   
   private SecretKeySpec key = null;
 
+  private RSAPrivateKey privateKey = null;
+
+  private RSAPublicKey publicKey = null;
+
   private byte[] encrypted = null;
 
-  private final String transformation = "AES/CBC/PKCS5Padding";
+  private static final String transformation = "AES/CBC/PKCS5Padding";
+
+  private static final String signTransform = "RSA/ECB/PKCS1Padding";
 
   Message() {}
 
@@ -51,6 +63,10 @@ public class Message {
   public Message setKey(SecretKeySpec key) {
     this.key = key;
     return this;
+  }
+
+  public Message setPrivateKey(byte[] key) {
+    privateKey = (RSAPrivateKey) key;
   }
 
   public Message setEncrypted(byte[] encrypted) {
@@ -170,12 +186,33 @@ public class Message {
   }
   
   public Message signHash() throws IOException {
+    // Get rsa public key
+    try {
+      Cipher cipher = Cipher.getInstance(signTransform);
 
+      // Initiate the cipher.
+        cipher.init(Cipher.ENCRYPT_MODE, (RSAPublicKey) publicKey);
+
+      // Encrypt/Decrypt the data.
+      signedHash = cipher.doFinal(hash);
+
+    } catch (IllegalBlockSizeException | BadPaddingException | InvalidKeyException | NoSuchAlgorithmException
+      | NoSuchPaddingException e) {
+      e.printStackTrace();
+      throw new IOException(MessageFormat.format("Failed to sign hash: {0}: {1}", e.getClass(), e.getMessage()));
+    }
     return this;
   }
   
   public Message unsignHash() throws IOException {
-    
+    try {
+    Cipher cipher = Cipher.getInstance(signTransform);
+    cipher.init(Cipher.DECRYPT_MODE, (RSAPrivateKey) privateKey);
+    } catch (IllegalBlockSizeException | BadPaddingException | InvalidKeyException | NoSuchAlgorithmException
+      | NoSuchPaddingException e) {
+      e.printStackTrace();
+      throw new IOException(MessageFormat.format("Failed to unsign hash: {0}: {1}", e.getClass(), e.getMessage()));
+    }
     return this;
   }
 
