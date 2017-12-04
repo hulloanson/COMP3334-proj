@@ -59,7 +59,6 @@ class InventoryManager extends Frame implements WindowListener {
 
   @Override
   public void windowClosing(WindowEvent windowEvent) {
-    // TODO: handle window close. it still fails
     try {
       receiverThread.join();
     } catch (InterruptedException e) {
