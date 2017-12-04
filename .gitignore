@@ -186,3 +186,6 @@ out/
 
 #libraries
 !/lib/*.jar
+
+#keys
+/keys
