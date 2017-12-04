@@ -1,5 +1,6 @@
 package main.java;
 
+import com.sun.deploy.util.ArrayUtil;
 import org.apache.commons.crypto.cipher.CryptoCipher;
 import org.apache.commons.crypto.cipher.CryptoCipherFactory;
 import org.apache.commons.crypto.random.CryptoRandom;
@@ -186,6 +187,8 @@ public class Message {
     // TODO: sign the hash as well
     this.encrypt().hash();
     return ArrayUtils.addAll(hash, encrypted);
+
+    String signature = messageSign("messagesign", pair.getPrivate());
 //    this.encrypt().hash().signHash();
 //    return ArrayUtils.addAll(signedHash, encrypted);
   }
@@ -193,7 +196,32 @@ public class Message {
   public String getPlainMessage() throws Exception {
     // TODO: unsign hash as well
 //    this.unsignHash().hashVerify().decrypt();
+
+    boolean sigVerify = verify("messagesign", sign, pair.getPublic());
+    System.out.println("Verified signature: " + sigVerify);
+
     this.hashVerify().decrypt();
     return this.toString();
   }
+
+  public static String sign(String plainText, PrivateKey privateKey) throws Exception {
+    Signature privateSignature = Signature.getInstance("SHA256withRSA");
+    privateSignature.initSign(privateKey);
+    privateSignature.update(plainText.getBytes(UTF_8));
+
+    byte[] signature = privateSignature.sign();
+
+    return Base64.getEncoder().encodeToString(signature);
+  }
+
+  public static boolean verify(String plainText, String signature, PublicKey publicKey) throws Exception {
+    Signature publicSignature = Signature.getInstance("SHA256withRSA");
+    publicSignature.initVerify(publicKey);
+    publicSignature.update(plainText.getBytes(UTF_8));
+
+    byte[] signatureBytes = Base64.getDecoder().decode(signature);
+
+    return publicSignature.verify(signatureBytes);
+  }
+
 }
