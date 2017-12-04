@@ -85,6 +85,7 @@ public class Receiver {
     // Extract data from buffer
     int dataOffset = received.getOffset();
     byte[] receivedBytes = Arrays.copyOfRange(received.getData(), dataOffset, dataOffset + received.getLength());
+    // Decryption
     Message message = new Message().setByReceived(receivedBytes).setKey(key);
     String receivedMsg = null;
     try {
@@ -119,28 +120,11 @@ public class Receiver {
       e.printStackTrace();
       System.exit(1);
     }
-//    // Encrypt message
-//    byte[] encrypted = null;
-//    try {
-//      logger.log(Level.FINE, "Started AES encryption");
-//      encrypted = toSend.encrypt().getEncrypted();
-//      logger.log(Level.FINE, "Encryption done.");
-//    } catch (Exception e) {
-//      e.printStackTrace();
-//      logger.log(Level.WARNING, MessageFormat.format("Encryption failed due to IOException: {0}", e.getMessage()));
-//      return false;
-//    }
-//    try  {
-//      // Hash message, represented in base64
-//      toSend.hash();
-//    } catch (IOException e) {
-//      logger.log(Level.WARNING, "Failed hashing: {0}", e.getMessage());
-//      return false;
-//    }
+    // Send threaded
     try {
       sendString(packed);
-//      if (!waitACK()) return false;
-//      sendString("ACK");
+      if (!waitACK()) return false;
+      sendString("ACK");
       return true;
     } catch (IOException e) {
       logger.log(Level.WARNING, MessageFormat.format("Send failed due to IOException: {0}", e.getMessage()));
@@ -155,11 +139,11 @@ public class Receiver {
     System.out.println("Started server on port " + port);
     while (!this.end) {
       String request = receiveString(0);
-//      sendString("ACK");
-//      if (!waitACK()) {
-//        logger.log(Level.INFO, "Request dropped due to timeout");
-//        continue;
-//      }
+      sendString("ACK");
+      if (!waitACK()) {
+        logger.log(Level.INFO, "Request dropped due to timeout");
+        continue;
+      }
       // ACK-ed, process request
       invManager.processRequest(request);
     }
