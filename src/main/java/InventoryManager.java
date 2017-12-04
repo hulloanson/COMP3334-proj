@@ -30,8 +30,7 @@ class InventoryManager extends Frame implements WindowListener {
   private Pattern sendPattern = Pattern.compile("^SEND([0-9]+)$");
   private Pattern checkPattern = Pattern.compile("^CHECK$");
   private Pattern requestPattern = Pattern.compile("^REQUEST([0-9]+)$");
-  private Pattern refillPattern = Pattern.compile("^REFILL([0-9]+)$");
-  private Pattern reqOKPattern = Pattern.compile("^OK$");
+  private Pattern refillPattern = Pattern.compile("^REFILL$");
   private Pattern amountPattern = Pattern.compile("^[A-Z]+([0-9]+)$");
   private Pattern errPattern = Pattern.compile("^ERR$");
   private Pattern invPattern = Pattern.compile("^INV([0-9]+)$");
@@ -109,9 +108,16 @@ class InventoryManager extends Frame implements WindowListener {
     }
     if (receiver.send("SEND" + amount)) {
       changeInventory(0 - amount);
+      if (inventory == 0) requestRefill();
       return true;
     }
     return false;
+  }
+
+  private void requestRefill() {
+    if (!receiver.send("REFILL")) {
+      logger.log(Level.FINE, "Failed to send REFILL command");
+    }
   }
 
   class CheckButtonHandler implements ActionListener {
@@ -255,7 +261,6 @@ class InventoryManager extends Frame implements WindowListener {
 
   }
 
-
   private int parseAmount(String message) throws RequestException {
     Matcher matcher = amountPattern.matcher(message);
     if (!matcher.find())
@@ -300,6 +305,13 @@ class InventoryManager extends Frame implements WindowListener {
           receiver.send("INSUFFICIENT");
         } else {
           sendAmount(parseAmount(req));
+        }
+      } else if (refillPattern.matcher(req).find()) {
+        if (500 > this.inventory) {
+          lastChange = 0;
+          receiver.send("INSUFFICIENT");
+        } else {
+          sendAmount(500);
         }
       } else if (errPattern.matcher(req).find()) {
         rollbackChange();
