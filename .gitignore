@@ -156,6 +156,7 @@ tags
 ### Archives template
 # It's better to unpack these files and commit the raw source because
 # git has its own built in compression methods.
+*.jar
 *.7z
 *.gz
 *.tgz
@@ -182,3 +183,6 @@ out/
 
 # Source files
 /src/main/java/Test.java
+
+#libraries
+!/lib/*.jar
