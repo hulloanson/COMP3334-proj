@@ -20,6 +20,8 @@ import java.text.MessageFormat;
 import java.util.Arrays;
 import java.util.Base64;
 import java.util.Properties;
+import java.security.PrivateKey;
+import java.security.PublicKey;
 
 /**
  * Created by hulloanson on 12/3/17.
