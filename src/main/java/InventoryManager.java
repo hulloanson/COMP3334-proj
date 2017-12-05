@@ -1,12 +1,17 @@
 package main.java;
 
-import java.awt.*;        // Using AWT container and component classes
-import java.awt.event.*;  // Using AWT event classes and listener interfaces
+import javax.crypto.spec.SecretKeySpec;
+import java.awt.*;
+import java.awt.event.ActionEvent;
+import java.awt.event.ActionListener;
+import java.awt.event.WindowEvent;
+import java.awt.event.WindowListener;
 import java.io.IOException;
 import java.net.InetAddress;
+import java.net.SocketException;
 import java.net.UnknownHostException;
+import java.nio.charset.StandardCharsets;
 import java.text.MessageFormat;
-import java.util.ArrayList;
 import java.util.logging.FileHandler;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -16,15 +21,14 @@ import java.util.regex.Pattern;
 
 // An AWT program inherits from the top-level container java.awt.Frame
 class InventoryManager extends Frame implements WindowListener {
+  // TODO: key exchange
+  private SecretKeySpec aesKey = new SecretKeySpec("1234567890123456".getBytes(StandardCharsets.UTF_8), "AES");
+
   private String role;
 
   private TextField requestAmountInput;
   private TextField sendAmountInput;
   private Panel selectPanel;
-
-  private Receiver receiver;
-
-  private ArrayList<String> requestQueue;
 
   // Patterns to parse requests
   private Pattern sendPattern = Pattern.compile("^SEND([0-9]+)$");
@@ -32,26 +36,25 @@ class InventoryManager extends Frame implements WindowListener {
   private Pattern requestPattern = Pattern.compile("^REQUEST([0-9]+)$");
   private Pattern refillPattern = Pattern.compile("^REFILL$");
   private Pattern amountPattern = Pattern.compile("^[A-Z]+([0-9]+)$");
-  private Pattern errPattern = Pattern.compile("^ERR$");
   private Pattern invPattern = Pattern.compile("^INV([0-9]+)$");
 
   // Inventory management
   private int inventory;
   private int peerInventory;
-  private int lastChange;
 
   // Globally-accessible elements
-  Label infoLabel;
-  Label peerInvLabel;
-  Label selfInvLabel;
+  private Label infoLabel;
+  private Label peerInvLabel;
+  private Label selfInvLabel;
 
   // Logging
-  public Logger logger;
+  private Logger logger;
 
   // Threads
   private Thread receiverThread;
+  private boolean end; // TODO: implement soft end
 
-
+  // Window events
   @Override
   public void windowOpened(WindowEvent windowEvent) {
 
@@ -93,46 +96,26 @@ class InventoryManager extends Frame implements WindowListener {
 
   }
 
+  // Button events
   class SendButtonHandler implements ActionListener {
     @Override
     public void actionPerformed(ActionEvent actionEvent) {
       int amount = Integer.parseInt(sendAmountInput.getText());
-      sendAmount(amount);
-    }
-  }
-
-  private boolean sendAmount(int amount) {
-    if (amount > inventory) {
-      infoLabel.setText("Don't have enough to send.");
-      logger.log(Level.WARNING, "Tried to manually send more than what was there");
-      return false;
-    }
-    if (receiver.send("SEND" + amount)) {
-      changeInventory(0 - amount);
-      if (inventory == 0) requestRefill();
-      return true;
-    }
-    return false;
-  }
-
-  private void requestRefill() {
-    if (!receiver.send("REFILL")) {
-      logger.log(Level.FINE, "Failed to send REFILL command");
+      sendCmdSend(amount);
     }
   }
 
   class CheckButtonHandler implements ActionListener {
     @Override
     public void actionPerformed(ActionEvent actionEvent) {
-      receiver.send("CHECK");
+      sendCmdCheck();
     }
   }
 
   class RequestButtonHandler implements ActionListener {
     @Override
     public void actionPerformed(ActionEvent actionEvent) {
-      int requestAmount = Integer.parseInt(requestAmountInput.getText());
-      receiver.send("REQUEST" + requestAmount);
+      sendCmdRequest();
     }
   }
 
@@ -144,8 +127,60 @@ class InventoryManager extends Frame implements WindowListener {
       setRole(role);
       remove(selectPanel);
       revalidate();
-      setUpMainScreen(role);
+      setUpMainScreen();
     }
+  }
+
+  /*************************** Command senders ******************************/
+  private void sendCmdSend(int amount) {
+    if (amount > inventory) {
+      infoLabel.setText("Don't have enough to send.");
+      logger.log(Level.INFO, "Tried to manually send more than what was there");
+    }
+    sendToSocket("SEND" + amount, (response, error) -> {
+      logSSCallback("SEND", response, error);
+      if (error != null) {
+        changeInventory(0 - amount);
+        if (inventory == 0) sendCmdRefill();
+      }
+    });
+  }
+
+  private void sendCmdCheck() {
+    sendToSocket("CHECK", (response, error) -> {
+      logSSCallback("CHECK", response, error);
+    });
+  }
+
+  private void sendCmdRequest() {
+    int requestAmount = Integer.parseInt(requestAmountInput.getText());
+    sendToSocket("REQUEST" + requestAmount, (response, error) -> {
+      logSSCallback("REQUEST", response, error);
+    });
+  }
+
+  private void sendCmdRefill() {
+    sendToSocket("REFILL", (response, error) -> {
+      logSSCallback("REFILL", response, error);
+    });
+  }
+
+  private void sendCmdInsufficient() {
+    sendToSocket("INSUFFICIENT", (response, error) -> {
+      logSSCallback("INSUFFICIENT", response, error);
+    });
+  }
+
+  private void sendCmdInv() {
+    sendToSocket("INV" + this.inventory, (response, error) -> {
+      logSSCallback("INV", response, error);
+    });
+  }
+  /************** Command senders ends *********************/
+
+  private void logSSCallback(String command, String response, Exception error) {
+    String message = MessageFormat.format("Send {0} {1}", command, error == null ? "succeeded" : "failed");
+    infoLabel.setText(message);
   }
 
   private void setRole(String role) {
@@ -199,8 +234,8 @@ class InventoryManager extends Frame implements WindowListener {
     Panel infoPanel = new Panel(new FlowLayout());
     infoLabel = new Label("Message will be shown here");
     infoPanel.add(infoLabel);
-    selfInvLabel = new Label("Self: 500");
-    peerInvLabel = new Label("Peer: 500");
+    selfInvLabel = new Label("Self: 1000");
+    peerInvLabel = new Label("Peer: 1000");
     infoPanel.add(selfInvLabel);
     infoPanel.add(peerInvLabel);
     return infoPanel;
@@ -218,11 +253,11 @@ class InventoryManager extends Frame implements WindowListener {
     add(selectPanel);
   }
 
-  private void setUpMainScreen(String role) {
+  private void setUpMainScreen() {
     // Data, logging
     setUpBackend();
     // Networking
-    startListener(role);
+    startListener();
     // UI
     setTitle("Inventory Manager - " + role);
     logger.log(Level.INFO, "Constructing send panel...");
@@ -238,10 +273,10 @@ class InventoryManager extends Frame implements WindowListener {
   }
 
   private void setUpBackend() {
-    this.inventory = 500;
-    this.peerInventory = 500;
+    this.inventory = 1000;
+    this.peerInventory = 1000;
     // Logging
-    logger = Logger.getLogger(Receiver.class.getName());
+    logger = Logger.getLogger(Logger.GLOBAL_LOGGER_NAME);
     FileHandler logFileHandler;
     try {
       logFileHandler = new FileHandler(this.role + "-invManager.log", true);
@@ -271,16 +306,8 @@ class InventoryManager extends Frame implements WindowListener {
   }
 
   private synchronized void changeInventory(int change) {
-    lastChange = change;
     this.inventory += change;
     this.peerInventory -= change;
-    updateInventoryLabels();
-  }
-
-  private void rollbackChange() {
-    logger.log(Level.INFO, MessageFormat.format("Rolling back change. The change :{0}", lastChange));
-    inventory -= lastChange;
-    peerInventory += lastChange;
     updateInventoryLabels();
   }
 
@@ -289,70 +316,75 @@ class InventoryManager extends Frame implements WindowListener {
     peerInvLabel.setText("Peer: " + peerInventory);
   }
 
-  public synchronized void processRequest(String req) {
+  private void sendToSocket(String message, SecSocket.SSCallback callback) {
+    try {
+      SecSocket.sendMessage(message,
+        aesKey, InetAddress.getLocalHost(), role.equals("Alice") ? 9999 : 9998,
+        callback
+      );
+    } catch (UnknownHostException e) {
+      infoLabel.setText("Error preparing send: unknown host");
+    }
+  }
+
+  private synchronized void processRequest(String req) {
 //    String req = requestQueue.get(0);
     logger.log(Level.FINER, MessageFormat.format("Incoming request: {0}", req));
     // default last change to 0 in case request exception occurs before receiver makes change to inventory
     try {
       if (checkPattern.matcher(req).find()) {
-        lastChange = 0;
-        receiver.send("INV" + this.inventory);
+        sendCmdInv();
       } else if (sendPattern.matcher(req).find()) { // SEND received
         changeInventory(parseAmount(req)); // Add to inventory
       } else if (requestPattern.matcher(req).find()) { // REQUEST received
         int reqAmount = parseAmount(req); // Parse request amount
         if (reqAmount > this.inventory) {
-          lastChange = 0;
-          receiver.send("INSUFFICIENT");
+          sendCmdInsufficient();
         } else {
-          sendAmount(parseAmount(req));
+          sendCmdSend(parseAmount(req));
         }
       } else if (refillPattern.matcher(req).find()) {
         if (500 > this.inventory) {
-          lastChange = 0;
-          receiver.send("INSUFFICIENT");
+          sendCmdInsufficient();
         } else {
-          sendAmount(500);
+          sendCmdSend(500);
         }
-      } else if (errPattern.matcher(req).find()) {
-        rollbackChange();
       } else if (invPattern.matcher(req).find()) {
         int peerAmount = parseAmount(req);
-        infoLabel.setText("Inventory check: " + (parseAmount(req) == inventory ? "Match" : "Does not match"));
-        logger.log(Level.FINE, "Inventory check: {0}, self is {1}, peer is {2}", new Object[]{
+        infoLabel.setText("Peer Inventory check: " + (parseAmount(req) == peerInventory ? "Match" : "Does not match"));
+        logger.log(Level.FINE, "Peer Inventory check: {0}, self is {1}, peer is {2}", new Object[]{
           parseAmount(req) == inventory ? "Match" : "Does not match",
-          inventory, peerAmount
+          peerInventory, peerAmount
         });
       } else {
-        logger.log(Level.WARNING, "Dropped incomprehensible message: {0}", req);
+        throw new RequestException(MessageFormat.format("Incomprehensible message {0}. Dropped", req));
       }
     } catch (RequestException e) {
-      // Send err
-      receiver.send("ERR");
+      logger.log(Level.INFO, "RequestException: {0}", new Object[]{e.getMessage()});
     }
   }
 
-  private void startListener(String role) {
-    try {
-      receiver = new Receiver(
-        role.equals("Bob") ? 9999 : 9998,
-        role.equals("Bob") ? 9998 : 9999,
-        InetAddress.getLocalHost(), InetAddress.getLocalHost(),
-        this
-      );
-    }catch (UnknownHostException e) {
-      e.printStackTrace();
-      System.exit(1);
-    }
-    final Runnable listener = () -> {
+  private SecSocket makeReceiver() throws UnknownHostException, SocketException {
+    return new SecSocket(
+      role.equals("Bob") ? 9999 : 9998,
+      InetAddress.getLocalHost(),
+      aesKey
+    );
+  }
+
+  private void startListener() {
+    receiverThread = new Thread(() -> {
       try {
-        receiver.handleRequests();
-      } catch (IOException e) {
+        SecSocket receiver = makeReceiver();
+        while (!end) {
+          String message = receiver.receiveMessage(0, true);
+          processRequest(message);
+        }
+      } catch (Exception e) {
         e.printStackTrace();
         System.exit(1);
       }
-    };
-    receiverThread = new Thread(listener, "receiver-thread");
+    }, "invManager-receiver");
     receiverThread.start();
   }
 

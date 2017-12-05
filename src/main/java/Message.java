@@ -156,8 +156,8 @@ public class Message {
   
   public Message hashVerify() throws IOException {
     byte[] tmpHash = getHash();
-    System.out.println(MessageFormat.format("tmpHash, length: {0}, {1}", new Object[]{tmpHash, tmpHash.length}));
-    System.out.println(MessageFormat.format("hash, length: {0}, {1}", new Object[]{hash, hash.length}));
+    System.out.println(MessageFormat.format("tmpHash, length: {0}, {1}", new Object[]{Arrays.toString(tmpHash), tmpHash.length}));
+    System.out.println(MessageFormat.format("hash, length: {0}, {1}", new Object[]{Arrays.toString(hash), hash.length}));
     if (!Arrays.equals(tmpHash, hash)) throw new IOException("Wrong hash");
     return this;
   }
