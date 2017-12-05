@@ -20,8 +20,6 @@ import java.text.MessageFormat;
 import java.util.Arrays;
 import java.util.Base64;
 import java.util.Properties;
-import java.security.PrivateKey;
-import java.security.PublicKey;
 
 /**
  * Created by hulloanson on 12/3/17.
@@ -29,17 +27,18 @@ import java.security.PublicKey;
 public class Message {
   private byte[] original = null;
 
-  private byte[] hash = null;
-  
+  private byte[] signature = null;
+
   private byte[] signedHash = null;
-  
+
   private SecretKeySpec key = null;
 
   private byte[] encrypted = null;
 
   private final String transformation = "AES/CBC/PKCS5Padding";
 
-  Message() {}
+  Message() {
+  }
 
   public Message setMessage(String string) {
     original = string.getBytes(StandardCharsets.UTF_8);
@@ -119,7 +118,7 @@ public class Message {
     encrypted = ArrayUtils.addAll(ivBytes, Arrays.copyOf(output, updateBytes + finalBytes));
     return this;
   }
-  
+
   public Message decrypt() throws Exception {
     Properties properties = new Properties();
     properties.setProperty(CryptoCipherFactory.CLASSES_KEY, CryptoCipherFactory.CipherProvider.JCE.getClassName());
@@ -137,11 +136,12 @@ public class Message {
     System.out.println(MessageFormat.format("message: {0}", this.toString()));
     return this;
   }
-  public Message setHash(byte[] hash) {
+
+  public Message setSignature(byte[] signature) {
     return this;
   }
 
-  public byte[] getHash() throws IOException {
+  public byte[] getSignature() throws IOException {
     try {
       MessageDigest digest = MessageDigest.getInstance("SHA-256");
       return Base64.getEncoder().encode(digest.digest(encrypted));
@@ -150,59 +150,62 @@ public class Message {
       throw new IOException("Hash with SHA-256 failed: No such algorithm.");
     }
   }
-  
-  public Message hash() throws IOException {
-    this.hash = getHash();
-    System.out.println(MessageFormat.format("hash length is: {0}", this.hash.length));
+
+  public Message signature() throws IOException {
+    this.signature = getSignature();
+    System.out.println(MessageFormat.format("signature is: {0}", this.signature.length));
     return this;
   }
-  
-  public Message hashVerify() throws IOException {
-    byte[] tmpHash = getHash();
-    System.out.println(MessageFormat.format("tmpHash, length: {0}, {1}", new Object[]{tmpHash, tmpHash.length}));
-    System.out.println(MessageFormat.format("hash, length: {0}, {1}", new Object[]{hash, hash.length}));
-    if (!Arrays.equals(tmpHash, hash)) throw new IOException("Wrong hash");
+
+  public Message signatureVerify() throws IOException {
+    byte[] tmpSig = getSignature();
+    System.out.println(MessageFormat.format("tmpSig, length: {0}, {1}", new Object[]{tmpSig, tmpSig.length}));
+    System.out.println(MessageFormat.format("signature, length: {0}, {1}", new Object[]{signature, signature.length}));
+    if (!Arrays.equals(tmpSig, signature)) throw new IOException("Incorrect signature");
     return this;
   }
 
   public Message setByReceived(byte[] received) {
     // received: first 44 byte is base64 encoded hash TODO: get signed hash
-    hash = Arrays.copyOf(received, 44);
+    signature = Arrays.copyOf(received, 44);
     encrypted = Arrays.copyOfRange(received, 44, received.length);
     return this;
   }
-  
-  public static String signHash(String plainText, PrivateKey privateKey) throws Exception {
-    Signature privateSignature = Signature.getInstance("SHA256withRSA");
-    privateSignature.initSign(privateKey);
-    privateSignature.update(plainText.getBytes(UTF_8));
 
-    byte[] signature = privateSignature.sign();
+  /**
+   * public static String signHash(String plainText, PrivateKey privateKey) throws Exception {
+   * Signature privateSignature = Signature.getInstance("SHA256withRSA");
+   * privateSignature.initSign(privateKey);
+   * privateSignature.update(plainText.getBytes(UTF_8));
+   * <p>
+   * byte[] signature = privateSignature.sign();
+   * <p>
+   * return Base64.getEncoder().encodeToString(signature);
+   * return this;
+   * }
+   * <p>
+   * public static Boolean verifyHash(String plainText, String signature, PublicKey publicKey) throws Exception {
+   * Signature publicSignature = Signature.getInstance("SHA256withRSA");
+   * publicSignature.initVerify(publicKey);
+   * publicSignature.update(plainText.getBytes(UTF_8));
+   * <p>
+   * if(signature == signature) {
+   * byte[] signatureBytes = Base64.getDecoder().decode(signature);
+   * return publicSignature.verify(signatureBytes);
+   * }
+   * return false;
+   * return this;
+   * }
+   */
 
-    return Base64.getEncoder().encodeToString(signature);
-    return this;
-  }
-  
-  public static Boolean verifyHash(String plainText, String signature, PublicKey publicKey) throws Exception {
-    Signature publicSignature = Signature.getInstance("SHA256withRSA");
-    publicSignature.initVerify(publicKey);
-    publicSignature.update(plainText.getBytes(UTF_8));
-
-    if(signature == signature) {
-      byte[] signatureBytes = Base64.getDecoder().decode(signature);
-      return publicSignature.verify(signatureBytes);
-    }
-    return false;
-    return this;
-  }
 
   public byte[] getUDPReady() throws Exception {
     if (key == null || original == null) {
       throw new IOException("No key or plain text specified");
     }
     // TODO: sign the hash as well
-    this.encrypt().hash();
-    return ArrayUtils.addAll(hash, encrypted);
+    this.encrypt().signature();
+    return ArrayUtils.addAll(signature, encrypted);
 
     String signature = messageSign("messagesign", pair.getPrivate());
 //    signHash(String plainText, PrivateKey privateKey);
@@ -217,10 +220,11 @@ public class Message {
     // TODO: unsign hash as well
 //    this.unsignHash().hashVerify().decrypt();
 
+
     boolean sigVerify = verify("messagesign", sign, pair.getPublic());
     System.out.println("Verified signature: " + sigVerify);
 
-    this.hashVerify().decrypt();
+    this.signatureVerify().decrypt();
     return this.toString();
   }
 
